@@ -19,9 +19,11 @@ INFLATION_RATE_KEY = 'inflation_rate'
 YEARS_TO_LIVE_KEY = 'years_to_live'
 NET_RETIREMENT_INCOME_KEY = 'net_retirement_income'
 RETIREMENT_TAX_RATE_KEY = 'retirement_tax_rate'
+SHOW_TABLE_KEY = 'show_table'
 
 NET_WORTH_CHANGE_KEY = 'net_worth_change'
 CONTRIB_CHANGE_KEY = 'contrib_change'
+RETIREMENT_INCOME_CHANGE_KEY = 'retirement_income_change'
 
 parser = argparse.ArgumentParser(description='Calculate when to retire.')
 parser.add_argument(CURRENT_SAVINGS_KEY, type=int, help='Current retirement savings right now, in dollars')
@@ -35,6 +37,8 @@ parser.add_argument(NET_RETIREMENT_INCOME_KEY, type=int, help='Desired net incom
 parser.add_argument(RETIREMENT_TAX_RATE_KEY, type=float, help='Estimated tax rate in retirement, in the form 0.XX')
 parser.add_argument('-w', '--change-worth', dest=NET_WORTH_CHANGE_KEY, action='append', nargs=2, metavar=('years_out','value'), default=[], help='Indicates a one-time change in net worth in X years of Y value, applied immediately at the start of the year (before withdrawals, before any market growth)')
 parser.add_argument('-c', '--change-contrib', dest=CONTRIB_CHANGE_KEY, action='append', nargs=3, metavar=('years_out','contrib', 'contrib_rate'), default=[], help='In X years in the future, sets the annual contrib value and increase rate going forward')
+parser.add_argument('-i', '--change-retirement-income', dest=RETIREMENT_INCOME_CHANGE_KEY, action='append', nargs=2, metavar=('years_out','net_income'), default=[], help='Indicates a one-time change in retirement income at X years')
+parser.add_argument('--no-table', dest=SHOW_TABLE_KEY, default=True, action='store_false')
 parsed_args = vars(parser.parse_args())
 
 current_retirement_savings = parsed_args[CURRENT_SAVINGS_KEY]
@@ -80,19 +84,34 @@ for years_out_str, contrib_str, contrib_rate_str in parsed_args[CONTRIB_CHANGE_K
         sys.exit(1)
     contrib_changes[years_out] = (contrib, contrib_rate)
 
+retirement_income_changes = {}
+for years_out_str, net_income_str in parsed_args[RETIREMENT_INCOME_CHANGE_KEY]:
+    years_out = int(years_out_str)
+    net_income = int(net_income_str)
+    if years_out in retirement_income_changes:
+        print("ERROR: Two retirement income changes defined with the same year '%s'" % years_out)
+        sys.exit(1)
+    if years_out < 0 or years_out >= years_to_live:
+        print("ERROR: Invalid retirement income change year '%s'; must be between [0,%s)" % years_out, years_to_live)
+        sys.exit(1)
+    retirement_income_changes[years_out] = net_income
+
+show_table = parsed_args[SHOW_TABLE_KEY]
+
 # =============== Main Code ====================================
 retirement_calculator = RetirementAgeCalculator(
-            current_retirement_savings,
-            annual_contribution,
-            annual_contribution_increase_rate,
-            pre_retirement_growth_rate,
-            post_retirement_growth_rate,
-            inflation_rate,
-            years_to_live,
-            desired_net_retirement_income_todays_dollars,
-            retirement_tax_rate,
-            manual_contrib_changes=contrib_changes,
-            manual_net_worth_changes=net_worth_changes)
+    current_retirement_savings,
+    annual_contribution,
+    annual_contribution_increase_rate,
+    pre_retirement_growth_rate,
+    post_retirement_growth_rate,
+    inflation_rate,
+    years_to_live,
+    desired_net_retirement_income_todays_dollars,
+    retirement_tax_rate,
+    manual_contrib_changes=contrib_changes,
+    manual_net_worth_changes=net_worth_changes,
+    manual_retirement_income_changes=retirement_income_changes)
 
 years_to_retirement = retirement_calculator.get_earliest_retirement()
 if years_to_retirement is None:
@@ -110,35 +129,36 @@ for key in contrib_changes.keys():
     if key >= years_to_retirement:
         print("WARN: You've set a contribution change that happens on or after projected retirement - this will be ignored")
 
-serieses = [
-    retirement_calculator.get_series_data(Series.ACCOUNT_VALUE),
-    retirement_calculator.get_series_data(Series.ACTUAL_WITHDRAWALS),
-    retirement_calculator.get_series_data(Series.ALL_WITHDRAWALS),
-    retirement_calculator.get_series_data(Series.MIN_RETIREMENT_WORTH),
-    retirement_calculator.get_series_data(Series.NO_RETIREMENT),
-    retirement_calculator.get_series_data(Series.CONTRIBUTIONS),
-]
+if show_table:
+    serieses = [
+        retirement_calculator.get_series_data(Series.ACCOUNT_VALUE),
+        retirement_calculator.get_series_data(Series.ACTUAL_WITHDRAWALS),
+        retirement_calculator.get_series_data(Series.ALL_WITHDRAWALS),
+        retirement_calculator.get_series_data(Series.MIN_RETIREMENT_WORTH),
+        retirement_calculator.get_series_data(Series.NO_RETIREMENT),
+        retirement_calculator.get_series_data(Series.CONTRIBUTIONS),
+    ]
 
 
-print("NOTE: withdrawal is taken out at the start of the year, i.e. immediately after the bank_statement")
-headers = [
-    "years",
-    "acct",
-    "withdrw",
-    "all_wd",
-    "minimum",
-    "noretir",
-    "contrib",
-]
+    print("NOTE: withdrawal is taken out at the start of the year, i.e. immediately after the bank_statement")
+    headers = [
+        "years",
+        "acct",
+        "withdrw",
+        "all_wd",
+        "minimum",
+        "noretir",
+        "contrib",
+    ]
 
-if have_tabulate:
-    data = []
-    for i in range(0, years_to_live):
-        data.append([str(i)] + ['{:,}'.format(int(series[i])) for series in serieses])
-    print(tabulate.tabulate(data, headers=headers, tablefmt='presto'))
-else:
-    print("   ".join(headers))
-    for i in range(0, years_to_live):
-        row = [str(i)] + [str(int(series[i])) for series in serieses]
-        print("   ".join(row))
-    print("INFO: tabulate module was not found so resorting to ugly tables; do 'pip install tabulate' to get prettier tables")
+    if have_tabulate:
+        data = []
+        for i in range(0, years_to_live):
+            data.append([str(i)] + ['{:,}'.format(int(series[i])) for series in serieses])
+        print(tabulate.tabulate(data, headers=headers, tablefmt='presto'))
+    else:
+        print("   ".join(headers))
+        for i in range(0, years_to_live):
+            row = [str(i)] + [str(int(series[i])) for series in serieses]
+            print("   ".join(row))
+        print("INFO: tabulate module was not found so resorting to ugly tables; do 'pip install tabulate' to get prettier tables")

@@ -60,12 +60,15 @@ class RetirementWithdrawalsFunction:
     """
     Describes, for each year in [0, years_to_live), the inflation-adjusted absolute withdrawal amount required to meet the desired net retirement income in today's dollars
     """
-    def __init__(self, years_to_live, net_retirement_income_todays_dollars, retirement_tax_rate, inflation_rate):
-        gross_retirement_income_todays_dollars = net_retirement_income_todays_dollars / (1.0 - retirement_tax_rate)
+    def __init__(self, years_to_live, net_retirement_income_todays_dollars, retirement_tax_rate, inflation_rate, manual_retirement_income_changes):
+        net_income = net_retirement_income_todays_dollars
         self.withdrawals = []
         for i in range(0, years_to_live):
-            # We subract one year from the exponentiation because inflation will only kick in one year from now
-            self.withdrawals.append(gross_retirement_income_todays_dollars * (1.0 + inflation_rate) ** i)
+            if i in manual_retirement_income_changes:
+                net_income = manual_retirement_income_changes[i]
+            gross_income = net_income / (1.0 - retirement_tax_rate)
+            # We subract one year from the exponentiation because inflation will only kick in one year from today
+            self.withdrawals.append(gross_income * (1.0 + inflation_rate) ** i)
 
     def apply(self, years_in_future):
         return self.withdrawals[years_in_future]
@@ -174,7 +177,8 @@ class RetirementAgeCalculator:
             desired_net_retirement_income_todays_dollars,
             retirement_tax_rate,
             manual_contrib_changes=None,
-            manual_net_worth_changes=None):
+            manual_net_worth_changes=None,
+            manual_retirement_income_changes=None):
         # TODO actually handle net worth changes at any point in time
         """
         NOTE: As of 2020-04-19, any net worth or contribution changes made after the projected retirement date
@@ -182,17 +186,21 @@ class RetirementAgeCalculator:
         """
         manual_contrib_changes = manual_contrib_changes if manual_contrib_changes is not None else {}
         manual_net_worth_changes = manual_net_worth_changes if manual_net_worth_changes is not None else {}
+        manual_retirement_income_changes = manual_retirement_income_changes if manual_retirement_income_changes is not None else {}
 
-        for years_out in manual_net_worth_changes.keys():
-            if years_out < 0 or years_out >= years_to_live:
-                raise ValueError("Invalid net worth change year '%s'; must be in range [0,%s)" % years_out, years_to_live)
         for years_out in manual_contrib_changes.keys():
             if years_out < 0 or years_out >= years_to_live:
                 raise ValueError("Invalid contrib change year '%s'; must be in range [0,%s)" % years_out, years_to_live)
+        for years_out in manual_net_worth_changes.keys():
+            if years_out < 0 or years_out >= years_to_live:
+                raise ValueError("Invalid net worth change year '%s'; must be in range [0,%s)" % years_out, years_to_live)
+        for years_out in manual_retirement_income_changes.keys():
+            if years_out < 0 or years_out >= years_to_live:
+                raise ValueError("Invalid retirement income change year '%s'; must be in range [0,%s)" % years_out, years_to_live)
         if years_to_live < 1:
             raise ValueError("Years to live must be >= 1")
 
-        all_withdrawals_function = RetirementWithdrawalsFunction(years_to_live, desired_net_retirement_income_todays_dollars, retirement_tax_rate, inflation_rate)
+        all_withdrawals_function = RetirementWithdrawalsFunction(years_to_live, desired_net_retirement_income_todays_dollars, retirement_tax_rate, inflation_rate, manual_retirement_income_changes)
         min_worth_function = RetirementMinWorthFunction(years_to_live, all_withdrawals_function, post_retirement_growth_rate)
 
         contribution_function = ContributionFunction(
