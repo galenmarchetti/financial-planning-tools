@@ -40,13 +40,59 @@ growth_rate_in_retirement = parsed_args[POST_GROWTH_RATE_KEY]
 inflation_rate = parsed_args[INFLATION_RATE_KEY]
 
 years_to_live = parsed_args[YEARS_TO_LIVE_KEY]
+if years_to_live < 1:
+    print("ERROR: Invalid years to live; are you expecting to die today??")
+    sys.exit(1)
+
 desired_net_retirement_income_todays_dollars = parsed_args[NET_RETIREMENT_INCOME_KEY]
 retirement_tax_rate = parsed_args[RETIREMENT_TAX_RATE_KEY]
 
-net_worth_changes = { int(years_out): int(change) for years_out, change in parsed_args[NET_WORTH_CHANGE_KEY] }
-contrib_changes = { int(years_out): (int(contrib), float(contrib_rate)) for years_out, contrib, contrib_rate in parsed_args[CONTRIB_CHANGE_KEY] }
-# TODO use this^^^
+# Validate no duplicates, for sanity
+net_worth_changes = {}
+for years_out_str, change_str in parsed_args[NET_WORTH_CHANGE_KEY]:
+    years_out = int(years_out_str)
+    change = int(change_str)
+    if years_out in net_worth_changes:
+        print("ERROR: Two net worth changes defined with the same year '%s'" % years_out)
+        sys.exit(1)
+    if years_out < 0 or years_out >= years_to_live:
+        print("ERROR: Invalid net worth change year '%s'; must be between [0,%s)" % years_out, years_to_live)
+        sys.exit(1)
+    net_worth_changes[years_out] = change
 
+contrib_changes = {}
+for years_out_str, contrib_str, contrib_rate_str in parsed_args[CONTRIB_CHANGE_KEY]:
+    years_out = int(years_out_str)
+    contrib = int(contrib_str)
+    contrib_rate = float(contrib_rate_str)
+    if years_out in contrib_changes:
+        print("ERROR: Two net worth changes defined with the same year '%s'" % years_out)
+        sys.exit(1)
+    if years_out < 0 or years_out >= years_to_live:
+        print("ERROR: Invalid contrib change year '%s'; must be between [0,%s)" % years_out, years_to_live)
+        sys.exit(1)
+    contrib_changes[years_out] = (contrib, contrib_rate)
+
+class ContributionCalculator:
+    """
+    Class that returns the yearly contribution amount for any given year in the future,
+     taking into account contrib increases and changes.
+    """
+    def __init__(self, manual_contrib_changes, initial_contrib_amount, initial_contrib_rate):
+        self.contribs = []
+        current_base_contrib = initial_contrib_amount
+        current_contrib_rate = initial_contrib_rate
+        years_since_last_change = 0
+        for i in range(0, years_to_live):
+            if i in manual_contrib_changes:
+                current_base_contrib, current_contrib_rate = manual_contrib_changes[i]
+                years_since_last_change = 0
+            self.contribs.append(current_base_contrib * (1 + current_contrib_rate) ** years_since_last_change)
+            years_since_last_change = years_since_last_change + 1
+        print(self.contribs)
+
+    def get_contrib_for_year(self, years_in_future):
+        return self.contribs[years_in_future]
 
 # =============== Main Code ====================================
 
@@ -55,7 +101,6 @@ gross_retirement_income_todays_dollars = desired_net_retirement_income_todays_do
 
 def calculate_balance_after_working_year(previous_balance, pre_retirement_growth_rate, annual_contribution):
     return previous_balance * (1 + pre_retirement_growth_rate) + annual_contribution
-
 
 
 # TODO make this a nice math formula
@@ -84,6 +129,7 @@ for i, elem in enumerate(reversed(retirement_withdrawal_in_x_years)):
 bank_account_needed_if_retiring_in_x_years = list(reversed(bank_account_needed_for_last_x_year))
 
 # Assumes you constantly contribute and grow forever
+contrib_calculator = ContributionCalculator(contrib_changes, annual_contribution, annual_contribution_increase_rate)
 no_retirement_bank_account = []
 for i in range(0, years_to_live):
     value_to_append = None
@@ -94,7 +140,7 @@ for i in range(0, years_to_live):
         value_to_append = calculate_balance_after_working_year(
             no_retirement_bank_account[i - 1],
             pre_retirement_growth_rate,
-            annual_contribution * (1 + annual_contribution_increase_rate) ** (i - 1)
+            contrib_calculator.get_contrib_for_year(i)
         )
     value_with_net_worth_change = max(0, value_to_append + net_worth_changes.get(i, 0))
     no_retirement_bank_account.append(value_with_net_worth_change)
@@ -154,7 +200,7 @@ for i in range(0, years_to_live):
     final_bank_account.append(account_value)
     withdrawal.append(withdrawal_value)
 
-print("years_from_now bank_statement needed withdrawal")
+print("years_from_now bank_statement retirement_limit withdrawal")
 print("NOTE: withdrawal is taken out at the start of the year, i.e. immediately after the bank_statement")
 for i in range(0, years_to_live):
     print("%s %s %s %s" % (i, int(final_bank_account[i]), int(bank_account_needed_if_retiring_in_x_years[i]), int(withdrawal[i])))
