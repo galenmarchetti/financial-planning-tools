@@ -13,7 +13,7 @@ class EquityValueEstimator:
     def total_value(self, date_of_leaving, pay_execution_fee=True, pay_capital_gains=True):
         val = 0
         for grant in self.grants:
-            value_per_share = self.share_price - grant.strike_price
+            value_per_share = max(self.share_price - grant.strike_price, 0)
             total_value = grant.get_shares_vested(date_of_leaving) * value_per_share
             if (pay_execution_fee):
                 val += total_value * (1 - grant.execution_fee)
