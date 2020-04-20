@@ -219,6 +219,11 @@ class RetirementAgeCalculator:
         actual_withdrawals_function = ActualWithdrawalsFunction(years_to_live, self.years_to_retirement, all_withdrawals_function)
         account_value_function = AccountValueFunction(years_to_live, self.years_to_retirement, no_retirement_function, post_retirement_growth_rate, all_withdrawals_function)
 
+        self.waste = None
+        if self.years_to_retirement is not None:
+            last_year = years_to_live - 1
+            self.waste = account_value_function.apply(last_year) - actual_withdrawals_function.apply(last_year)
+
         self.underlying_funcs = {
             Series.ALL_WITHDRAWALS: all_withdrawals_function,
             Series.MIN_RETIREMENT_WORTH: min_worth_function,
@@ -233,6 +238,14 @@ class RetirementAgeCalculator:
         Get the smallest number of years after which you'll be able to retire, or None if not possible
         """
         return self.years_to_retirement
+
+    def get_waste(self):
+        """
+        Dollars you'd die with (or None if you never get to retire). Less waste signifies close to retiring
+         one year later if you increase costs; more waste signifies closeness to retiring one year earlier
+         if you reduce costs.
+        """
+        return self.waste
 
     def get_series_data(self, series):
         return self.underlying_funcs[series].data()

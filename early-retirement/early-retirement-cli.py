@@ -25,7 +25,7 @@ NET_WORTH_CHANGE_KEY = 'net_worth_change'
 CONTRIB_CHANGE_KEY = 'contrib_change'
 RETIREMENT_INCOME_CHANGE_KEY = 'retirement_income_change'
 
-parser = argparse.ArgumentParser(description='Calculate when to retire.')
+parser = argparse.ArgumentParser(description='Calculate the earliest retirement is available')
 parser.add_argument(CURRENT_SAVINGS_KEY, type=int, help='Current retirement savings right now, in dollars')
 parser.add_argument(ANNUAL_CONTRIB_KEY, type=int, help='Annual contribution, in dollars')
 parser.add_argument(ANNUAL_CONTRIB_INCREASE_RATE_KEY, type=float, help='Annual contribution, in dollars')
@@ -38,7 +38,7 @@ parser.add_argument(RETIREMENT_TAX_RATE_KEY, type=float, help='Estimated tax rat
 parser.add_argument('-w', '--change-worth', dest=NET_WORTH_CHANGE_KEY, action='append', nargs=2, metavar=('years_out','value'), default=[], help='Indicates a one-time change in net worth in X years of Y value, applied immediately at the start of the year (before withdrawals, before any market growth)')
 parser.add_argument('-c', '--change-contrib', dest=CONTRIB_CHANGE_KEY, action='append', nargs=3, metavar=('years_out','contrib', 'contrib_rate'), default=[], help='In X years in the future, sets the annual contrib value and increase rate going forward')
 parser.add_argument('-i', '--change-retirement-income', dest=RETIREMENT_INCOME_CHANGE_KEY, action='append', nargs=2, metavar=('years_out','net_income'), default=[], help='Indicates a one-time change in retirement income at X years')
-parser.add_argument('--no-table', dest=SHOW_TABLE_KEY, default=True, action='store_false')
+parser.add_argument('--no-table', dest=SHOW_TABLE_KEY, default=True, action='store_false', help="Don't show the table, just the number of years to retirement")
 parsed_args = vars(parser.parse_args())
 
 current_retirement_savings = parsed_args[CURRENT_SAVINGS_KEY]
@@ -118,7 +118,8 @@ if years_to_retirement is None:
     print("You can't retire with the current parameters!")
     sys.exit(1)
 else:
-    print(" ===> YEARS TO RETIREMENT: %s <===" % years_to_retirement)
+    print(" > YEARS TO RETIREMENT: %s" % years_to_retirement)
+    print(" > WASTE: %s" % '{:,}'.format(int(retirement_calculator.get_waste())))
 
 # Double-check the user hasn't added any networth changes AFTER retirement, as we don't handle these
 for key in net_worth_changes.keys():
